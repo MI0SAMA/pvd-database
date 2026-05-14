@@ -8,7 +8,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sqlalchemy import text
-from db import get_engine
+from db import get_engine, get_valid_numeric_params
 from config import get_nas_mount
 from plotter import plot_pe_loop
 
@@ -17,24 +17,23 @@ st.set_page_config(page_title="电学性能分析", layout="wide")
 engine = get_engine()
 NAS = get_nas_mount()
 
-PARAM_COLS = [
-    'film_target_thickness_nm', 'top_elec_target_thickness_nm',
-    'al_power_w', 'sc_power_w', 'n2_flow_sccm', 'ar_flow_sccm',
-    'substrate_temp_set', 'target_dist_mm',
-    'rotation_speed_rpm', 'total_duration_sec', 'base_vacuum_pa',
-    'working_pressure_pa', 'pulse_freq_khz', 'pre_sputtering_min',
-]
+PARAM_COLS = get_valid_numeric_params('pvd_deposition', exclude_cols=['pvd_id', 'sample_id'])
 
-PARAM_LABELS = {
-    'film_target_thickness_nm': 'Film Thk (nm)', 'top_elec_target_thickness_nm': 'Top Elec Thk (nm)',
-    'al_power_w': 'Al Power (W)', 'sc_power_w': 'Sc Power (W)',
-    'n2_flow_sccm': 'N2 Flow (sccm)', 'ar_flow_sccm': 'Ar Flow (sccm)',
-    'substrate_temp_set': 'Substrate Temp', 'target_dist_mm': 'Target Dist (mm)',
-    'rotation_speed_rpm': 'Rotation (rpm)',
-    'total_duration_sec': 'Duration (sec)', 'base_vacuum_pa': 'Base Vacuum (Pa)',
-    'working_pressure_pa': 'Working Pressure (Pa)',
-    'pulse_freq_khz': 'Pulse Freq (kHz)', 'pre_sputtering_min': 'Pre-sputter (min)',
-}
+def _elabel(col):
+    labels = {
+        'film_target_thickness_nm': 'Film Thk (nm)', 'top_elec_target_thickness_nm': 'Top Elec Thk (nm)',
+        'al_power_w': 'Al Power (W)', 'sc_power_w': 'Sc Power (W)',
+        'alsc_power_w': 'AlSc Power (W)', 'aln_power_w': 'AlN Power (W)',
+        'n2_flow_sccm': 'N2 Flow (sccm)', 'ar_flow_sccm': 'Ar Flow (sccm)',
+        'substrate_temp_set': 'Substrate Temp', 'target_dist_mm': 'Target Dist (mm)',
+        'rotation_speed_rpm': 'Rotation (rpm)',
+        'total_duration_sec': 'Duration (sec)', 'base_vacuum_pa': 'Base Vacuum (Pa)',
+        'working_pressure_pa': 'Working Pressure (Pa)',
+        'pulse_freq_khz': 'Pulse Freq (kHz)', 'pre_sputtering_min': 'Pre-sputter (min)',
+    }
+    return labels.get(col, col)
+
+PARAM_LABELS = {col: _elabel(col) for col in PARAM_COLS}
 
 ELEC_COLS = ['avg_pr', 'avg_ec', 'avg_pmax', 'avg_loop_area', 'avg_ec_pos', 'avg_ec_neg']
 ELEC_LABELS = {

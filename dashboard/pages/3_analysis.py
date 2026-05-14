@@ -8,7 +8,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sqlalchemy import text
-from db import get_engine
+from db import get_engine, get_valid_numeric_params
 
 st.set_page_config(page_title="工艺参数分析", layout="wide")
 
@@ -42,41 +42,30 @@ def load_process_data():
 
 df = load_process_data()
 
-# ── Define numeric parameter columns ──
-PARAM_COLS = [
-    'film_target_thickness_nm', 'top_elec_target_thickness_nm', 'bottom_elec_target_thickness_nm',
-    'al_power_w', 'sc_power_w',
-    'n2_flow_sccm', 'ar_flow_sccm',
-    'substrate_temp_set', 'bias_voltage_v',
-    'target_dist_mm', 'sputter_angle_deg', 'rotation_speed_rpm',
-    'total_duration_sec', 'base_vacuum_pa', 'working_pressure_pa',
-    'total_power_w', 'discharge_voltage_v', 'discharge_current_a',
-    'pulse_freq_khz', 'duty_cycle_pct', 'pre_sputtering_min',
-]
+# ── Auto-detect valid numeric parameter columns from DB ──
+PARAM_COLS = get_valid_numeric_params('pvd_deposition', exclude_cols=['pvd_id', 'sample_id'])
 
-PARAM_LABELS = {
-    'film_target_thickness_nm': 'Film Thickness (nm)',
-    'top_elec_target_thickness_nm': 'Top Electrode Thickness (nm)',
-    'bottom_elec_target_thickness_nm': 'Bottom Electrode Thickness (nm)',
-    'al_power_w': 'Al Power (W)',
-    'sc_power_w': 'Sc Power (W)',
-    'n2_flow_sccm': 'N2 Flow (sccm)',
-    'ar_flow_sccm': 'Ar Flow (sccm)',
-    'substrate_temp_set': 'Substrate Temp (C)',
-    'bias_voltage_v': 'Bias Voltage (V)',
-    'target_dist_mm': 'Target Distance (mm)',
-    'sputter_angle_deg': 'Sputter Angle (deg)',
-    'rotation_speed_rpm': 'Rotation Speed (rpm)',
-    'total_duration_sec': 'Total Duration (sec)',
-    'base_vacuum_pa': 'Base Vacuum (Pa)',
-    'working_pressure_pa': 'Working Pressure (Pa)',
-    'total_power_w': 'Total Power (W)',
-    'discharge_voltage_v': 'Discharge Voltage (V)',
-    'discharge_current_a': 'Discharge Current (A)',
-    'pulse_freq_khz': 'Pulse Freq (kHz)',
-    'duty_cycle_pct': 'Duty Cycle (%)',
-    'pre_sputtering_min': 'Pre-sputtering (min)',
-}
+def _label(col):
+    """Generate a readable label from a column name."""
+    labels = {
+        'film_target_thickness_nm': 'Film Thickness (nm)',
+        'top_elec_target_thickness_nm': 'Top Electrode Thickness (nm)',
+        'bottom_elec_target_thickness_nm': 'Bottom Electrode Thickness (nm)',
+        'al_power_w': 'Al Power (W)', 'sc_power_w': 'Sc Power (W)',
+        'alsc_power_w': 'AlSc Power (W)', 'aln_power_w': 'AlN Power (W)',
+        'n2_flow_sccm': 'N2 Flow (sccm)', 'ar_flow_sccm': 'Ar Flow (sccm)',
+        'substrate_temp_set': 'Substrate Temp (C)', 'bias_voltage_v': 'Bias Voltage (V)',
+        'target_dist_mm': 'Target Distance (mm)', 'sputter_angle_deg': 'Sputter Angle (deg)',
+        'rotation_speed_rpm': 'Rotation Speed (rpm)',
+        'total_duration_sec': 'Total Duration (sec)', 'base_vacuum_pa': 'Base Vacuum (Pa)',
+        'working_pressure_pa': 'Working Pressure (Pa)', 'total_power_w': 'Total Power (W)',
+        'discharge_voltage_v': 'Discharge Voltage (V)', 'discharge_current_a': 'Discharge Current (A)',
+        'pulse_freq_khz': 'Pulse Freq (kHz)', 'duty_cycle_pct': 'Duty Cycle (%)',
+        'pre_sputtering_min': 'Pre-sputtering (min)',
+    }
+    return labels.get(col, col)
+
+PARAM_LABELS = {col: _label(col) for col in PARAM_COLS}
 
 # ── Sidebar: batch filter ──
 with st.sidebar:
