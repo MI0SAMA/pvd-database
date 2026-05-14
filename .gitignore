@@ -1,0 +1,9 @@
+.env
+pgdata/
+backup/
+nas_data/
+raw_data/
+__pycache__/
+*.pyc
+~*
+Thumbs.db

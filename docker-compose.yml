@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:15
+    container_name: pvd_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: yao
+      POSTGRES_PASSWORD: 3141
+      POSTGRES_DB: pvd_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - /home/pvd_db/pgdata:/var/lib/postgresql/data
+
+  web:
+    build: ./dashboard
+    container_name: pvd_dashboard
+    restart: always
+    volumes:
+      - ./dashboard:/app
+      - ./processor:/app/processor:ro
+      - /home/pvd_db/nas_data:/app/nas_data:ro
+    working_dir: /app
+    ports:
+      - "8501:8501"
+    depends_on:
+      - db
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=yao
+      - DB_PASSWORD=3141
+      - DB_NAME=pvd_db
+      - ADMIN_PWD=Pl6626)&
+      - NAS_MOUNT=/app/nas_data
+
+  image_server:
+    image: nginx:alpine
+    container_name: pvd_image_server
+    restart: always
+    ports:
+      - "8081:80"
+    volumes:
+      - /home/pvd_db/nas_data:/usr/share/nginx/html:ro
