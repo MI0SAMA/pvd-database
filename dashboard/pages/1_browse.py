@@ -44,6 +44,10 @@ if not target_table:
     st.stop()
 
 df = load_table(target_table)
+# Hide meaningless auto-increment PK columns
+for col in ['pvd_id', 'elec_id']:
+    if col in df.columns:
+        df = df.drop(columns=[col])
 
 # ====== Admin edit mode ======
 if st.session_state.is_admin:
