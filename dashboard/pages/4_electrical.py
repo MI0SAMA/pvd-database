@@ -11,6 +11,7 @@ from sqlalchemy import text
 from db import get_engine, get_valid_numeric_params
 from config import get_nas_mount
 from plotter import plot_pe_loop
+from processor.parse import parse_hysteresis
 
 st.set_page_config(page_title="电学性能分析", layout="wide")
 
@@ -330,77 +331,63 @@ if x_param and y_elec and len(plot_df) > 2:
     st.pyplot(fig)
 else:
     st.info("数据不足")
-
-# ═══════════════ Section 4: Multi-sample comparison ═══════════════
+# ═══════════════ Section 4: Multi-sample PE Loop comparison ═══════════════
 st.divider()
-st.subheader("多样品对比")
-st.caption("选择多个样品，在同一张图上对比电学性能随测试电压的变化")
+st.subheader("多样品 PE Loop 对比")
+st.caption("选择样品，在同一张图上叠加完整的 PE 电滞回线")
 
 sample_options = sorted(raw_sel['sample_id'].unique())
-compare_samples = st.multiselect("选择样品 (1-8个)", sample_options, max_selections=8, key='multi_sample')
+compare_samples = st.multiselect("选择样品 (1-6个)", sample_options, max_selections=6, key='multi_sample')
 
 if compare_samples:
-    # Display mode selector
-    mode_c1, mode_c2, mode_c3 = st.columns(3)
-    with mode_c1:
-        plot_mode = st.radio("绘制方式", ["全部曲线", "仅平均值"], horizontal=True, key='plot_mode')
-    with mode_c2:
-        metric_choice = st.selectbox("指标", ["Pr & Pmax", "仅 Pr", "仅 Pmax", "仅 Ec"], key='metric_choice')
-    with mode_c3:
+    mc1, mc2 = st.columns(2)
+    with mc1:
+        plot_mode = st.radio("同一样品多条曲线", ["全部叠加", "仅第一条"], horizontal=True, key='loop_mode')
+    with mc2:
         custom_range = st.checkbox("自定义坐标范围", value=False, key='custom_range')
 
     if custom_range:
-        rc1, rc2 = st.columns(2)
+        rc1, rc2, rc3, rc4 = st.columns(4)
         with rc1:
-            x_min = st.number_input("X min (V)", value=0.0, step=1.0)
-            x_max = st.number_input("X max (V)", value=100.0, step=10.0)
+            x_min = st.number_input("V min", value=-100.0, step=10.0)
         with rc2:
-            y_min = st.number_input("Y min", value=0.0, step=1.0)
-            y_max = st.number_input("Y max", value=100.0, step=10.0)
+            x_max = st.number_input("V max", value=100.0, step=10.0)
+        with rc3:
+            y_min = st.number_input("P min", value=-200.0, step=10.0)
+        with rc4:
+            y_max = st.number_input("P max", value=200.0, step=10.0)
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+    fig, ax = plt.subplots(figsize=(12, 8))
     colors = plt.cm.tab10(range(len(compare_samples)))
 
     for idx, sid in enumerate(compare_samples):
-        sd = raw_sel[raw_sel['sample_id'] == sid].sort_values('test_voltage')
+        curves = raw_sel[raw_sel['sample_id'] == sid].sort_values('test_voltage')
         c = colors[idx]
 
-        if len(sd) < 1:
-            continue
+        subset = curves if plot_mode == "全部叠加" else curves.head(1)
 
-        tv = sd['test_voltage'].astype(float)
-        pmax = sd['pmax'].astype(float)
-        pr = sd['remnant_polarization_pr'].astype(float)
-        ec = sd['coercive_field_ec'].astype(float)
+        for _, crow in subset.iterrows():
+            fp = os.path.join(NAS, str(crow['raw_data_path']))
+            try:
+                hdata = parse_hysteresis(fp)
+                tv = crow['test_voltage']
+                period = crow.get('period_ms', 10)
+                freq = 500 if float(period) < 5 else 50
 
-        if plot_mode == "仅平均值":
-            # Aggregate by test_voltage (mean of same voltage)
-            agg = sd.groupby('test_voltage').agg({'pmax': 'mean', 'remnant_polarization_pr': 'mean', 'coercive_field_ec': 'mean'}).reset_index()
-            tv_agg = agg['test_voltage'].astype(float)
-            if 'Pr' in metric_choice:
-                ax.plot(tv_agg, agg['remnant_polarization_pr'].astype(float), 'o-', color=c, linewidth=2, markersize=8, label='{} Pr'.format(sid))
-            if 'Pmax' in metric_choice:
-                ax.plot(tv_agg, agg['pmax'].astype(float), 's--', color=c, linewidth=2, markersize=8, label='{} Pmax'.format(sid))
-            if 'Ec' in metric_choice:
-                ax.plot(tv_agg, agg['coercive_field_ec'].astype(float), '^:', color=c, linewidth=2, markersize=8, label='{} Ec'.format(sid))
-        else:
-            # Plot all individual curves
-            if 'Pr' in metric_choice:
-                ax.scatter(tv, pr, color=c, alpha=0.4, s=20, marker='o')
-                # Connect points for same sample
-                ax.plot(tv, pr, '-', color=c, alpha=0.3, linewidth=0.8)
-            if 'Pmax' in metric_choice:
-                ax.scatter(tv, pmax, color=c, alpha=0.4, s=20, marker='s')
-                ax.plot(tv, pmax, '--', color=c, alpha=0.3, linewidth=0.8)
-            if 'Ec' in metric_choice:
-                ax.scatter(tv, ec, color=c, alpha=0.4, s=20, marker='^')
-                ax.plot(tv, ec, ':', color=c, alpha=0.3, linewidth=0.8)
-            # Add legend entry (one per sample)
-            ax.plot([], [], color=c, linewidth=2, label=sid)
+                label = '{} | {:.0f}V {}Hz'.format(sid, float(tv), freq)
+                if plot_mode == "全部叠加":
+                    label += ' #{}'.format(crow.name)
 
-    ax.set_xlabel('Test Voltage (V)')
-    ax.set_ylabel('Polarization (uC/cm2) / Ec (V)')
-    ax.set_title('Multi-Sample Comparison — {}'.format(metric_choice))
+                ax.plot(hdata.voltage, hdata.polarization, color=c,
+                        linewidth=1.0, alpha=0.6, label=label)
+            except Exception:
+                pass
+
+    ax.axhline(y=0, color='gray', linewidth=0.5, linestyle='--')
+    ax.axvline(x=0, color='gray', linewidth=0.5, linestyle='--')
+    ax.set_xlabel('Voltage (V)')
+    ax.set_ylabel('Polarization (uC/cm2)')
+    ax.set_title('PE Loop Comparison')
     ax.legend(fontsize=7, loc='upper left', ncol=2)
     ax.grid(True, alpha=0.3)
 
