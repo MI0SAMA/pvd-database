@@ -342,8 +342,8 @@ compare_samples = st.multiselect("选择样品 (1-6个)", sample_options, max_se
 if compare_samples:
     mc1, mc2 = st.columns(2)
     with mc1:
-        plot_mode = st.radio("同一样品多条曲线", ["全部曲线", "仅第一条", "平均曲线"], horizontal=True, key='loop_mode',
-                             help="全部曲线: 每条单独绘制 | 仅第一条: 每个样品一条 | 平均曲线: 同一电压网格插值后取均值")
+        plot_mode = st.radio("同一样品多条曲线",
+            ["全部曲线", "仅第一条", "平均曲线"], horizontal=True, key='loop_mode')
     with mc2:
         custom_range = st.checkbox("自定义坐标范围", value=False, key='custom_range')
 
@@ -354,7 +354,7 @@ if compare_samples:
         with rc3: y_min = st.number_input("P min", value=-200.0, step=10.0)
         with rc4: y_max = st.number_input("P max", value=200.0, step=10.0)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(14, 9))
     colors = plt.cm.tab10(range(len(compare_samples)))
 
     for idx, sid in enumerate(compare_samples):
@@ -369,41 +369,52 @@ if compare_samples:
                 hdata = parse_hysteresis(fp)
                 tv, period = crow['test_voltage'], crow.get('period_ms', 10)
                 freq = 500 if float(period) < 5 else 50
-                label = '{} | {:.0f}V {}Hz ({})'.format(sid, float(tv), freq, 'n={}'.format(n_curves))
+                label = '{} | {:.0f}V {}Hz'.format(sid, float(tv), freq)
                 ax.plot(hdata.voltage, hdata.polarization, color=c, linewidth=2.0, alpha=0.9, label=label)
             except Exception:
                 pass
 
         elif plot_mode == "平均曲线":
-            # Interpolate all curves to common V grid, then average
-            all_v, all_p = [], []
-            for _, crow in curves.iterrows():
-                fp = os.path.join(NAS, str(crow['raw_data_path']))
-                try:
-                    hdata = parse_hysteresis(fp)
-                    all_v.append(hdata.voltage)
-                    all_p.append(hdata.polarization)
-                except Exception:
-                    pass
-            if all_v:
-                # Find common V range
-                v_min = max(float(v.min()) for v in all_v)
-                v_max = min(float(v.max()) for v in all_v)
-                v_grid = np.linspace(v_min, v_max, 500)
-                p_interp = []
-                for v_arr, p_arr in zip(all_v, all_p):
-                    p_interp.append(np.interp(v_grid, v_arr, p_arr))
-                p_mean = np.mean(p_interp, axis=0)
-                p_std = np.std(p_interp, axis=0)
-                tv_mean = curves['test_voltage'].mean()
-                period = curves['period_ms'].iloc[0] if 'period_ms' in curves.columns else 10
-                freq = 500 if float(period) < 5 else 50
-                label = '{} | avg {:.0f}V {}Hz (n={})'.format(sid, tv_mean, freq, n_curves)
-                ax.plot(v_grid, p_mean, color=c, linewidth=2.5, alpha=0.95, label=label)
-                ax.fill_between(v_grid, p_mean - p_std, p_mean + p_std, color=c, alpha=0.1)
+            # Group by test_voltage, average within each group
+            for tv_val in sorted(curves['test_voltage'].unique()):
+                group = curves[curves['test_voltage'] == tv_val]
+                all_v, all_p = [], []
+                for _, crow in group.iterrows():
+                    fp = os.path.join(NAS, str(crow['raw_data_path']))
+                    try:
+                        hdata = parse_hysteresis(fp)
+                        all_v.append(np.array(hdata.voltage, dtype=np.float64))
+                        all_p.append(np.array(hdata.polarization, dtype=np.float64))
+                    except Exception:
+                        pass
+                if len(all_v) > 0:
+                    # Common grid: union of min/max across curves in this group
+                    v_min = float(min(v.min() for v in all_v))
+                    v_max = float(max(v.max() for v in all_v))
+                    v_grid = np.linspace(v_min, v_max, 500)
+                    p_interp = []
+                    for v_arr, p_arr in zip(all_v, all_p):
+                        p_interp.append(np.interp(v_grid, v_arr, p_arr))
+                    p_mean = np.mean(p_interp, axis=0)
+                    period = group['period_ms'].iloc[0] if 'period_ms' in group.columns else 10
+                    freq = 500 if float(period) < 5 else 50
+                    label = '{} | avg {:.0f}V {}Hz (n={})'.format(sid, tv_val, freq, len(group))
+                    ax.plot(v_grid, p_mean, color=c, linewidth=2.0, alpha=0.9, label=label)
+                    if len(p_interp) > 1:
+                        p_std = np.std(p_interp, axis=0)
+                        ax.fill_between(v_grid, p_mean - p_std, p_mean + p_std, color=c, alpha=0.1)
 
-        else:  # 全部曲线
-            line_styles = ['-', '--', '-.', ':'] * 3
+        else:  # 全部曲线 — every single curve gets its own legend entry
+            curve_styles = [
+                ('-', 1.8, 0.9),   # solid thick
+                ('--', 1.4, 0.7),  # dashed
+                ('-.', 1.2, 0.65), # dash-dot
+                (':', 1.4, 0.6),   # dotted
+                ('-', 1.0, 0.5),   # solid thin
+                ('--', 1.0, 0.45), # dashed thin
+                ('-.', 0.8, 0.4),
+                (':', 0.8, 0.4),
+            ]
             for i, (_, crow) in enumerate(curves.iterrows()):
                 fp = os.path.join(NAS, str(crow['raw_data_path']))
                 try:
@@ -411,17 +422,10 @@ if compare_samples:
                     tv = crow['test_voltage']
                     period = crow.get('period_ms', 10)
                     freq = 500 if float(period) < 5 else 50
-                    ls = line_styles[i % len(line_styles)]
-                    lw = 1.5 - 0.3 * (i // 4) if i >= 4 else 1.2
+                    ls, lw, alpha = curve_styles[i % len(curve_styles)]
                     label = '{} | {:.0f}V {}Hz'.format(sid, float(tv), freq)
-                    if i == 0:
-                        # First curve: solid, thicker, add count to label
-                        ax.plot(hdata.voltage, hdata.polarization, color=c, linewidth=2.0,
-                                alpha=0.85, linestyle='-', label='{} (n={})'.format(label, n_curves))
-                    else:
-                        # Subsequent: thinner, different style, no legend
-                        ax.plot(hdata.voltage, hdata.polarization, color=c, linewidth=lw,
-                                alpha=0.35, linestyle=ls)
+                    ax.plot(hdata.voltage, hdata.polarization, color=c,
+                            linewidth=lw, alpha=alpha, linestyle=ls, label=label)
                 except Exception:
                     pass
 
@@ -430,7 +434,12 @@ if compare_samples:
     ax.set_xlabel('Voltage (V)')
     ax.set_ylabel('Polarization (uC/cm2)')
     ax.set_title('PE Loop Comparison')
-    ax.legend(fontsize=8, loc='upper left', ncol=2)
+    # Legend: smaller font, multi-column, outside if too many entries
+    n_legend = sum(1 for _ in ax.get_lines())
+    if n_legend > 15:
+        ax.legend(fontsize=6, loc='upper left', ncol=3, bbox_to_anchor=(1.01, 1.0))
+    else:
+        ax.legend(fontsize=7, loc='upper left', ncol=2)
     ax.grid(True, alpha=0.3)
 
     if custom_range:
